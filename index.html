@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hand Gesture LED Control</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--tx:#1b2333;--mut:#6b7488;--bd:#dfe3ec;--ac:#2563eb;--on:#22c55e;--off:#9aa3b5;--bad:#ef4444}
+:root[data-theme=dark]{--bg:#0d1220;--card:#161d30;--tx:#e8ecf6;--mut:#8f9ab3;--bd:#27304a;--ac:#5b8cff}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 18px;background:var(--card);border-bottom:1px solid var(--bd)}
+h1{font-size:18px;margin:0}nav{display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:8px}
+button:hover{border-color:var(--ac)}button.pri,nav button.act{background:var(--ac);color:#fff;border-color:var(--ac)}
+main{max-width:1100px;margin:0 auto;padding:16px}.page{display:none}.page.act{display:block}
+.grid{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+h2{font-size:15px;margin:0 0 10px}.mut{color:var(--mut);font-size:13px}
+.cam{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.cam .ph{position:absolute;inset:0;display:grid;place-items:center;color:#9aa3b5;text-align:center;padding:10px}
+.big{font-size:54px;text-align:center;line-height:1.1}.gname{text-align:center;font-weight:600;margin-bottom:8px}
+.leds{display:flex;justify-content:space-between;gap:6px;margin:10px 0}.led{text-align:center;font-size:12px;flex:1}
+.led i{display:block;width:34px;height:34px;border-radius:50%;margin:0 auto 4px;background:var(--off);opacity:.45;transition:.25s}
+.led.on i{background:var(--on);opacity:1;box-shadow:0 0 14px 4px var(--on);animation:p 1.4s infinite}
+@keyframes p{50%{box-shadow:0 0 6px 1px var(--on)}}
+.st{display:flex;flex-wrap:wrap;gap:6px 16px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:5px}.dot.ok{background:var(--on)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left}
+pre{background:#0b1020;color:#cfe3ff;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;margin:8px 0}
+#log{max-height:240px;overflow:auto;font:13px monospace}#log div{padding:3px 0;border-bottom:1px dashed var(--bd)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}.stats b{display:block;font-size:20px}
+#toast{position:fixed;right:14px;bottom:14px;background:var(--bad);color:#fff;padding:10px 14px;border-radius:8px;display:none;max-width:320px;z-index:9}
+.map td{text-align:center}.map td:first-child{text-align:left}
+body.pres header,body.pres .hide-pres{display:none}
+</style></head><body>
+<header><h1>🖐️ Hand Gesture LED Control</h1>
+<nav id="nav"></nav>
+<div class="row" style="margin:0"><button onclick="toggleTheme()">🌓 Theme</button><button onclick="presentation()">⛶ Present</button></div></header>
+<main>
+
+<section class="page act" id="p-dash">
+ <div class="grid">
+  <div>
+   <div class="card"><h2>Live Camera</h2>
+    <div class="cam"><video id="vid" playsinline muted></video><canvas id="cv"></canvas><div class="ph" id="ph">Camera is off — click “Start Camera”</div></div>
+    <div class="row"><button class="pri" id="camBtn" onclick="toggleCam()">▶ Start Camera</button>
+     <button class="pri" id="serBtn" onclick="toggleSerial()">🔌 Connect Arduino</button></div>
+    <div class="mut">Use Chrome or Edge (needed for camera + USB serial). Internet is needed once to load the hand-tracking model.</div></div>
+   <div class="card"><h2>Manual Control</h2>
+    <div class="row"><button onclick="manual('off')">ALL OFF</button><button onclick="manual('on')">ALL ON</button></div>
+    <div class="row" id="mbtns"></div>
+    <div class="row"><span class="mut">Test gesture without camera:</span><span id="simbtns" class="row" style="margin:0"></span></div>
+    <label class="mut"><input type="checkbox" id="manualLock"> Pause camera control (manual mode)</label></div>
+  </div>
+  <div>
+   <div class="card"><h2>Gesture</h2><div class="big" id="gico">✊</div><div class="gname" id="gname">0 Fingers</div>
+    <div class="leds" id="leds"></div></div>
+   <div class="card"><h2>Connection Status</h2><div class="st">
+    <span><i class="dot" id="s-ard"></i>Arduino: <b id="t-ard">Disconnected</b></span>
+    <span><i class="dot" id="s-ser"></i>USB Serial: <b id="t-ser">Disconnected</b></span>
+    <span><i class="dot" id="s-cam"></i>Camera: <b id="t-cam">Inactive</b></span>
+    <span><i class="dot" id="s-ges"></i>Gesture Detection: <b id="t-ges">Inactive</b></span></div></div>
+   <div class="card"><h2>Statistics</h2><div class="stats">
+    <div><b id="st-n">0</b><span class="mut">Gestures</span></div><div><b id="st-ms">–</b><span class="mut">Response (ms)</span></div><div><b id="st-on">0s</b><span class="mut">LED ON time</span></div></div>
+    <div class="row"><button onclick="resetStats()">Reset statistics</button></div></div>
+  </div>
+ </div>
+ <div class="card"><h2>Activity History</h2><div id="log"></div></div>
+</section>
+
+<section class="page" id="p-ctrl">
+ <div class="card"><h2>Gesture Mapping</h2><p class="mut">Choose which LEDs turn on for each finger count. Saved in this browser.</p>
+ <table class="map" id="map"></table><div class="row"><button onclick="resetMap()">Reset to default</button></div></div>
+</section>
+
+<section class="page" id="p-hw">
+ <div class="card"><h2>Arduino Connection</h2>
+ <table><tr><th>Arduino UNO</th><th>Component</th></tr>
+ <tr><td>D2</td><td>LED 1 through 270Ω</td></tr><tr><td>D3</td><td>LED 2 through 270Ω</td></tr>
+ <tr><td>D4</td><td>LED 3 through 270Ω</td></tr><tr><td>D5</td><td>LED 4 through 270Ω</td></tr>
+ <tr><td>D6</td><td>LED 5 through 270Ω</td></tr><tr><td>GND</td><td>Breadboard − rail (all LED cathodes)</td></tr>
+ <tr><td>USB</td><td>Laptop → Arduino (power + serial communication)</td></tr></table>
+ <p class="mut">No external 12V supply is required. Each LED: long leg (anode) → 270Ω → Dx; short leg (cathode) → − rail.</p>
+<pre>                 ARDUINO UNO
+              ┌───────────────┐
+D2 ──270Ω────►│ LED 1         │
+D3 ──270Ω────►│ LED 2         │
+D4 ──270Ω────►│ LED 3         │
+D5 ──270Ω────►│ LED 4         │
+D6 ──270Ω────►│ LED 5         │
+GND ─────────►│ GND           │
+              └───────────────┘
+                    │
+                    ▼
+             Breadboard − rail
+
+USB cable → Arduino UNO → Laptop</pre>
+<pre>Laptop Webcam
+      ↓
+Gesture Detection (MediaPipe Hands)
+      ↓
+USB Serial (9600 baud, 1 byte)
+      ↓
+Arduino UNO
+      ↓
+D2 D3 D4 D5 D6
+      ↓
+5 LEDs</pre></div>
+ <div class="card"><h2>Arduino Port Setup (serial)</h2>
+ <ol><li>Upload the sketch below with Arduino IDE (Board: Arduino UNO, choose the COM port / /dev/ttyACM0).</li>
+ <li><b>Close Arduino IDE Serial Monitor</b> — only one program can use the port.</li>
+ <li>Click <b>Connect Arduino</b> on the dashboard, pick the port (e.g. “Arduino Uno (COM3)”) and press Connect.</li>
+ <li>Baud rate: <b>9600</b>. The page sends one byte: bit0 = LED1 … bit4 = LED5.</li></ol>
+<pre>const int LED_PINS[5] = {2, 3, 4, 5, 6};
+void setup() {
+  Serial.begin(9600);
+  for (int i = 0; i &lt; 5; i++) { pinMode(LED_PINS[i], OUTPUT); digitalWrite(LED_PINS[i], LOW); }
+}
+void loop() {
+  if (Serial.available() &gt; 0) {
+    int mask = Serial.read();
+    for (int i = 0; i &lt; 5; i++) digitalWrite(LED_PINS[i], (mask &gt;&gt; i) &amp; 1);
+  }
+}</pre></div>
+</section>
+
+<section class="page" id="p-about">
+ <div class="card"><h2>Components Used</h2><ul><li>Arduino UNO + USB cable</li><li>5 × LEDs</li><li>5 × 270Ω resistors</li><li>Breadboard + jumper wires</li><li>Laptop with webcam</li></ul></div>
+ <div class="card"><h2>How It Works</h2><ol><li>The webcam streams video into the browser.</li><li>MediaPipe Hands finds 21 landmarks on your hand.</li><li>Each finger is “up” if its tip is farther from the wrist than its middle joint; the thumb is checked sideways.</li><li>The count (0–5) is stabilised over a few frames, then looked up in the Gesture Mapping.</li><li>The LED pattern is sent as one byte over USB serial; the Arduino switches D2–D6.</li></ol></div>
+ <div class="card"><h2>About Project</h2><p>Hand Gesture LED Control — an IoT / embedded systems project combining computer vision, a web interface and Arduino hardware.</p><p class="mut">Developer / Team: edit this text in the HTML file.</p></div>
+</section>
+</main>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script>
+const $=id=>document.getElementById(id);
+const pages=[["dash","Dashboard"],["ctrl","Gesture Mapping"],["hw","Arduino Connection"],["about","Components & How It Works"]];
+$("nav").innerHTML=pages.map(([k,n],i)=>`<button class="${i?"":"act"}" data-k="${k}">${n}</button>`).join("");
+$("nav").onclick=e=>{const k=e.target.dataset.k;if(!k)return;document.querySelectorAll(".page").forEach(p=>p.classList.toggle("act",p.id=="p-"+k));
+ document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("act",b.dataset.k==k))};
+function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.dataset.theme=="dark"?"light":"dark"}
+function presentation(){document.body.classList.toggle("pres");if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();}
+document.addEventListener("keydown",e=>{if(e.key=="Escape")document.body.classList.remove("pres")});
+function toast(m){const t=$("toast");t.textContent="⚠ "+m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",5000)}
+
+// ---- state ----
+const ICONS=["✊","☝️","✌️","🤟","🖖","🖐️"], NAMES=["0 Fingers","1 Finger","2 Fingers","3 Fingers","4 Fingers","5 Fingers"];
+let mask=0,cur=-1,stat={n:0,ms:0,on:0},map;
+const defMap=()=>[0,1,3,7,15,31];
+try{map=JSON.parse(localStorage.getItem("ledmap")||"null")}catch(e){} if(!Array.isArray(map)||map.length!=6)map=defMap();
+const saveMap=()=>{try{localStorage.setItem("ledmap",JSON.stringify(map))}catch(e){}};
+
+$("leds").innerHTML=[1,2,3,4,5].map(i=>`<div class="led" id="led${i}"><i></i>LED ${i}<br><span class="mut" id="lt${i}">OFF</span></div>`).join("");
+$("mbtns").innerHTML=[1,2,3,4,5].map(i=>`<button onclick="manual(${i-1})">LED ${i}</button>`).join("");
+$("simbtns").innerHTML=[0,1,2,3,4,5].map(i=>`<button onclick="applyCount(${i},true)">${i}</button>`).join("");
+function drawMap(){let h="<tr><th>Gesture</th>"+[1,2,3,4,5].map(i=>`<th>LED ${i}</th>`).join("")+"<th>Action</th></tr>";
+ for(let g=0;g<6;g++){h+=`<tr><td>${NAMES[g]}</td>`+[0,1,2,3,4].map(b=>`<td><input type="checkbox" ${map[g]>>b&1?"checked":""} onchange="mapChg(${g},${b},this.checked)"></td>`).join("")+`<td id="ma${g}"></td></tr>`}
+ $("map").innerHTML=h;for(let g=0;g<6;g++)$("ma"+g).textContent=desc(map[g])}
+function desc(m){const l=[1,2,3,4,5].filter(i=>m>>(i-1)&1);return !l.length?"All OFF":l.length==5?"All LEDs ON":"LED "+l.join(",")+" ON"}
+function mapChg(g,b,v){map[g]=v?map[g]|1<<b:map[g]&~(1<<b);$("ma"+g).textContent=desc(map[g]);saveMap()}
+function resetMap(){map=defMap();saveMap();drawMap()}
+drawMap();
+
+const ts=()=>new Date().toLocaleTimeString("en-GB");
+function log(t){const d=document.createElement("div");d.textContent=ts()+"  →  "+t;$("log").prepend(d);while($("log").children.length>50)$("log").lastChild.remove()}
+function setMask(m,label,t0){mask=m&31;
+ for(let i=1;i<=5;i++){const on=mask>>(i-1)&1;$("led"+i).classList.toggle("on",!!on);$("lt"+i).textContent=on?"ON":"OFF"}
+ sendSerial(mask);if(label)log(label+" → "+desc(mask));
+ if(t0){stat.ms=Math.round(performance.now()-t0);$("st-ms").textContent=stat.ms}}
+function applyCount(n,sim){cur=n;$("gico").textContent=ICONS[n];$("gname").textContent=NAMES[n];stat.n++;$("st-n").textContent=stat.n;setMask(map[n],NAMES[n],sim?null:t0g)}
+function manual(x){let m=x=="off"?0:x=="on"?31:mask^(1<<x);setMask(m,"Manual")}
+setInterval(()=>{const c=[0,1,2,3,4].filter(b=>mask>>b&1).length;if(c){stat.on+=c;$("st-on").textContent=stat.on+"s"}},1000);
+function resetStats(){stat={n:0,ms:0,on:0};$("st-n").textContent=0;$("st-ms").textContent="–";$("st-on").textContent="0s"}
+function stt(k,ok,txt){$("s-"+k).classList.toggle("ok",ok);$("t-"+k).textContent=txt}
+
+// ---- Serial (Arduino port) ----
+let port=null,writer=null;
+async function toggleSerial(){
+ if(port){try{writer?.releaseLock();await port.close()}catch(e){}port=writer=null;serStat(false);return}
+ if(!("serial" in navigator)){toast("Web Serial not supported. Use Chrome or Edge on desktop.");return}
+ try{port=await navigator.serial.requestPort();await port.open({baudRate:9600});writer=port.writable.getWriter();serStat(true);log("Arduino connected (9600 baud)");
+  port.addEventListener("disconnect",()=>{port=writer=null;serStat(false);toast("Arduino disconnected")});
+  setTimeout(()=>sendSerial(mask),2000)}   // UNO resets when port opens
+ catch(e){port=writer=null;serStat(false);toast("Could not open port: "+e.message+" (close Arduino Serial Monitor?)")}}
+function serStat(ok){stt("ard",ok,ok?"Connected":"Disconnected");stt("ser",ok,ok?"Connected":"Disconnected");$("serBtn").textContent=ok?"⏏ Disconnect Arduino":"🔌 Connect Arduino"}
+async function sendSerial(m){if(!writer)return;try{await writer.write(new Uint8Array([m]))}catch(e){toast("Serial write failed: "+e.message)}}
+
+// ---- Camera + gesture ----
+let hands,stream,running=false,t0g=0,last=-1,streak=0;
+const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function countFingers(l){let n=0;
+ if(d(l[4],l[17])>d(l[3],l[17])*1.05&&d(l[4],l[5])>d(l[3],l[5]))n++;
+ [[8,6],[12,10],[16,14],[20,18]].forEach(([t,p])=>{if(d(l[t],l[0])>d(l[p],l[0])*1.05)n++});return n}
+const chains=[[0,1,2,3,4],[0,5,6,7,8],[9,10,11,12],[13,14,15,16],[0,17,18,19,20],[5,9,13,17]];
+function onResults(r){const cv=$("cv"),c=cv.getContext("2d");cv.width=r.image.width;cv.height=r.image.height;c.clearRect(0,0,cv.width,cv.height);
+ const l=r.multiHandLandmarks&&r.multiHandLandmarks[0];let n=0;
+ if(l){c.strokeStyle="#22c55e";c.lineWidth=3;chains.forEach(ch=>{c.beginPath();ch.forEach((i,k)=>{const x=l[i].x*cv.width,y=l[i].y*cv.height;k?c.lineTo(x,y):c.moveTo(x,y)});c.stroke()});
+  c.fillStyle="#fff";l.forEach(p=>{c.beginPath();c.arc(p.x*cv.width,p.y*cv.height,4,0,7);c.fill()});n=countFingers(l)}
+ stt("ges",true,l?"Active (hand detected)":"Active (no hand)");
+ if(n==last)streak++;else{last=n;streak=1;t0g=performance.now()}
+ if(streak==6&&n!=cur&&!$("manualLock").checked)applyCount(n,false)}
+async function toggleCam(){
+ if(running){running=false;stream.getTracks().forEach(t=>t.stop());$("vid").srcObject=null;$("ph").style.display="grid";$("camBtn").textContent="▶ Start Camera";stt("cam",false,"Inactive");stt("ges",false,"Inactive");return}
+ try{if(typeof Hands==="undefined")throw new Error("Hand-tracking library not loaded (check internet)");
+  stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});$("vid").srcObject=stream;await $("vid").play();
+  if(!hands){hands=new Hands({locateFile:f=>"https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/"+f});
+   hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.6,minTrackingConfidence:.5});hands.onResults(onResults)}
+  running=true;$("ph").style.display="none";$("camBtn").textContent="⏹ Stop Camera";stt("cam",true,"Active");stt("ges",true,"Loading model…");
+  (async function loop(){if(!running)return;try{await hands.send({image:$("vid")})}catch(e){}requestAnimationFrame(loop)})()}
+ catch(e){running=false;stt("cam",false,"Error");toast("Camera error: "+e.message)}}
+setMask(0);
+</script></body></html>
